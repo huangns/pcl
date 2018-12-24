@@ -550,6 +550,9 @@ pcl::computeMeanAndCovarianceMatrix (const pcl::PointCloud<PointT> &cloud,
 }
 
 //////////////////////////////////////////////////////////////////////////////////////////////
+//using centroid[3] to save point_count
+/***enter this function 2018.12.24 huang***/
+//////////////////////////////////////////////////////////////////////////////////////////////
 template <typename PointT, typename Scalar> inline unsigned int
 pcl::computeMeanAndCovarianceMatrix (const pcl::PointCloud<PointT> &cloud,
                                      const std::vector<int> &indices,
@@ -596,19 +599,45 @@ pcl::computeMeanAndCovarianceMatrix (const pcl::PointCloud<PointT> &cloud,
       accu [8] += cloud[*iIt].z;
     }
   }
-
+/*
   accu /= static_cast<Scalar> (point_count);
   //Eigen::Vector3f vec = accu.tail<3> ();
   //centroid.head<3> () = vec;//= accu.tail<3> ();
   //centroid.head<3> () = accu.tail<3> ();    -- does not compile with Clang 3.0
   centroid[0] = accu[6]; centroid[1] = accu[7]; centroid[2] = accu[8];
   centroid[3] = 1;
+
+    
   covariance_matrix.coeffRef (0) = accu [0] - accu [6] * accu [6];
   covariance_matrix.coeffRef (1) = accu [1] - accu [6] * accu [7];
   covariance_matrix.coeffRef (2) = accu [2] - accu [6] * accu [8];
   covariance_matrix.coeffRef (4) = accu [3] - accu [7] * accu [7];
   covariance_matrix.coeffRef (5) = accu [4] - accu [7] * accu [8];
   covariance_matrix.coeffRef (8) = accu [5] - accu [8] * accu [8];
+  covariance_matrix.coeffRef (3) = covariance_matrix.coeff (1);
+  covariance_matrix.coeffRef (6) = covariance_matrix.coeff (2);
+  covariance_matrix.coeffRef (7) = covariance_matrix.coeff (5);
+*/
+  accu[6]/=static_cast<Scalar> (point_count);
+  accu[7]/=static_cast<Scalar> (point_count);
+  accu[8]/=static_cast<Scalar> (point_count);
+
+      //centroid.head<3> () = accu.tail<3> ();    -- does not compile with Clang 3.0
+    centroid[0] = accu[6]; centroid[1] = accu[7]; centroid[2] = accu[8];
+   //2018.12.6 
+    centroid[3] = 1;
+	//std::cout<<"centroid before: "<<centroid.transpose()<<std::endl;
+	centroid[3]=static_cast<Scalar> (point_count);
+	//std::cout<<"centroid after: "<<centroid.transpose()<<std::endl;
+	//std::cout<<"point_count:"<<point_count<<std::endl;
+
+
+  covariance_matrix.coeffRef (0) = (accu [0] - (static_cast<Scalar> (point_count))*accu [6] * accu [6])/(static_cast<Scalar> (point_count));
+  covariance_matrix.coeffRef (1) = (accu [1] - (static_cast<Scalar> (point_count))*accu [6] * accu [7])/(static_cast<Scalar> (point_count));
+  covariance_matrix.coeffRef (2) = (accu [2] - (static_cast<Scalar> (point_count))*accu [6] * accu [8])/(static_cast<Scalar> (point_count));
+  covariance_matrix.coeffRef (4) = (accu [3] - (static_cast<Scalar> (point_count))*accu [7] * accu [7])/(static_cast<Scalar> (point_count));
+  covariance_matrix.coeffRef (5) = (accu [4] - (static_cast<Scalar> (point_count))*accu [7] * accu [8])/(static_cast<Scalar> (point_count));
+  covariance_matrix.coeffRef (8) = (accu [5] - (static_cast<Scalar> (point_count))*accu [8] * accu [8])/(static_cast<Scalar> (point_count));
   covariance_matrix.coeffRef (3) = covariance_matrix.coeff (1);
   covariance_matrix.coeffRef (6) = covariance_matrix.coeff (2);
   covariance_matrix.coeffRef (7) = covariance_matrix.coeff (5);
