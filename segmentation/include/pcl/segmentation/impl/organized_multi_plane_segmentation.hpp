@@ -45,7 +45,7 @@
 #include <pcl/segmentation/organized_multi_plane_segmentation.h>
 #include <pcl/common/centroid.h>
 #include <pcl/common/eigen.h>
-
+#include <iostream>
 /////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 template <typename PointT> pcl::PointCloud<PointT>
 projectToPlaneFromViewpoint (pcl::PointCloud<PointT>& cloud, Eigen::Vector4f& normal, Eigen::Vector3f& centroid, Eigen::Vector3f& vp)
@@ -78,7 +78,7 @@ pcl::OrganizedMultiPlaneSegmentation<PointT, PointNT, PointLT>::segment (std::ve
   std::vector <Eigen::Matrix3f, Eigen::aligned_allocator<Eigen::Matrix3f> > covariances;
   segment (model_coefficients, inlier_indices, centroids, covariances, labels, label_indices);
 }
-
+//huang
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 template<typename PointT, typename PointNT, typename PointLT> void
 pcl::OrganizedMultiPlaneSegmentation<PointT, PointNT, PointLT>::segment (std::vector<ModelCoefficients>& model_coefficients, 
@@ -88,6 +88,7 @@ pcl::OrganizedMultiPlaneSegmentation<PointT, PointNT, PointLT>::segment (std::ve
                                                                          pcl::PointCloud<PointLT>& labels,
                                                                          std::vector<pcl::PointIndices>& label_indices)
 {
+//std::cout<<"hhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhh\n";
   if (!initCompute ())
     return;
 
@@ -123,10 +124,10 @@ pcl::OrganizedMultiPlaneSegmentation<PointT, PointNT, PointLT>::segment (std::ve
   compare_->setDistanceThreshold (static_cast<float> (distance_threshold_), true);
 
   // Set up the output
-  OrganizedConnectedComponentSegmentation<PointT,PointLT> connected_component (compare_);
+  OrganizedConnectedComponentSegmentation<PointT,pcl::Label> connected_component (compare_);
   connected_component.setInputCloud (input_);
   connected_component.segment (labels, label_indices);
-
+/*
   Eigen::Vector4f clust_centroid = Eigen::Vector4f::Zero ();
   Eigen::Vector4f vp = Eigen::Vector4f::Zero ();
   Eigen::Matrix3f clust_cov;
@@ -180,6 +181,75 @@ pcl::OrganizedMultiPlaneSegmentation<PointT, PointNT, PointLT>::segment (std::ve
       }
     }
   }
+*/
+
+
+  Eigen::Vector4d clust_centroid = Eigen::Vector4d::Zero ();
+  Eigen::Vector4d vp = Eigen::Vector4d::Zero ();
+  Eigen::Matrix3d clust_cov;
+  pcl::ModelCoefficients model;
+  model.values.resize (4);
+
+  // Fit Planes to each cluster
+  for (size_t i = 0; i < label_indices.size (); i++)
+  {
+    if (static_cast<unsigned> (label_indices[i].indices.size ()) > min_inliers_)
+    {
+      pcl::computeMeanAndCovarianceMatrix (*input_, label_indices[i].indices, clust_cov, clust_centroid);
+      Eigen::Vector4d plane_params;
+      
+      EIGEN_ALIGN16 Eigen::Vector3d::Scalar eigen_value;
+      EIGEN_ALIGN16 Eigen::Vector3d eigen_vector;
+      pcl::eigen33 (clust_cov, eigen_value, eigen_vector);
+      plane_params[0] = eigen_vector[0];
+      plane_params[1] = eigen_vector[1];
+      plane_params[2] = eigen_vector[2];
+      plane_params[3] = 0;
+      plane_params[3] = -1 * plane_params.dot (clust_centroid);
+
+      vp -= clust_centroid;
+      double cos_theta = vp.dot (plane_params);
+      if (cos_theta < 0)
+      {
+        plane_params *= -1;
+        plane_params[3] = 0;
+        plane_params[3] = -1 * plane_params.dot (clust_centroid);
+      }
+      
+      // Compute the curvature surface change
+      double curvature;
+      double eig_sum = clust_cov.coeff (0) + clust_cov.coeff (4) + clust_cov.coeff (8);
+      if (eig_sum != 0)
+        curvature = fabs (eigen_value / eig_sum);
+      else
+        curvature = 0;
+
+      if (curvature < (double)maximum_curvature_)
+      {
+        model.values[0] = static_cast<float>(plane_params[0]);
+        model.values[1] = static_cast<float>(plane_params[1]);
+        model.values[2] = static_cast<float>(plane_params[2]);
+        model.values[3] = static_cast<float>(plane_params[3]);
+        model_coefficients.push_back (model);
+        inlier_indices.push_back (label_indices[i]);
+		Eigen::Vector4f clust_centroid_f = Eigen::Vector4f::Zero ();
+		clust_centroid_f[0]=static_cast<float>(clust_centroid[0]);
+		clust_centroid_f[1]=static_cast<float>(clust_centroid[1]);
+		clust_centroid_f[2]=static_cast<float>(clust_centroid[2]);
+		clust_centroid_f[3]=static_cast<float>(clust_centroid[3]);
+        Eigen::Matrix3f clust_cov_f=Eigen::Matrix3f::Zero();
+		clust_cov_f<<clust_cov(0,0),clust_cov(0,1),clust_cov(0,2), clust_cov(1,0),clust_cov(1,1),clust_cov(1,2),clust_cov(2,0),clust_cov(2,1),clust_cov(2,2);
+        centroids.push_back (clust_centroid_f);
+        covariances.push_back (clust_cov_f);
+		//std::cout<<"clust_cov:\n"<<clust_cov<<std::endl;
+		//std::cout<<"clust_cov_f:\n"<<clust_cov_f<<std::endl;
+		//std::cout<<"clust_centroid:\n"<<clust_centroid.transpose()<<std::endl;
+		//std::cout<<"clust_centroid_f:\n"<<clust_centroid_f.transpose()<<std::endl;
+      }
+    }
+  }
+
+
   deinitCompute ();
 }
 
@@ -263,7 +333,7 @@ pcl::OrganizedMultiPlaneSegmentation<PointT, PointNT, PointLT>::segmentAndRefine
                                        model);
   }
 }
-
+//huang
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 template<typename PointT, typename PointNT, typename PointLT> void
 pcl::OrganizedMultiPlaneSegmentation<PointT, PointNT, PointLT>::segmentAndRefine (std::vector<PlanarRegion<PointT>, Eigen::aligned_allocator<PlanarRegion<PointT> > >& regions,
@@ -295,14 +365,15 @@ pcl::OrganizedMultiPlaneSegmentation<PointT, PointNT, PointLT>::segmentAndRefine
                                              model_coefficients[i].values[1],
                                              model_coefficients[i].values[2],
                                              model_coefficients[i].values[3]);
-
+	//std::cout<<"centroid after after: "<<centroids[i].transpose()<<std::endl;
     Eigen::Vector3f vp (0.0, 0.0, 0.0);
     if (project_points_ && boundary_cloud.points.size () > 0)
       boundary_cloud = projectToPlaneFromViewpoint (boundary_cloud, model, centroid, vp);
 
     regions[i] = PlanarRegion<PointT> (centroid,
                                        covariances[i], 
-                                       static_cast<unsigned int> (inlier_indices[i].indices.size ()),
+										static_cast<unsigned int> ( centroids[i][3] ),
+                                      // static_cast<unsigned int> (inlier_indices[i].indices.size ()),
                                        boundary_cloud.points,
                                        model);
   }
@@ -317,7 +388,7 @@ pcl::OrganizedMultiPlaneSegmentation<PointT, PointNT, PointLT>::refine (std::vec
                                                                         PointCloudLPtr& labels,
                                                                         std::vector<pcl::PointIndices>& label_indices)
 {
-  //List of labels to grow, and index of model corresponding to each label
+  //List of lables to grow, and index of model corresponding to each label
   std::vector<bool> grow_labels;
   std::vector<int> label_to_model;
   grow_labels.resize (label_indices.size (), false);
@@ -356,7 +427,7 @@ pcl::OrganizedMultiPlaneSegmentation<PointT, PointNT, PointLT>::refine (std::vec
       {
         //test1 = true;
         labels->points[current_row+colIdx+1].label = current_label;
-        label_indices[current_label].indices.push_back (current_row+colIdx+1);
+        label_indices[label_to_model[current_label]].indices.push_back (current_row+colIdx+1);
         inlier_indices[label_to_model[current_label]].indices.push_back (current_row+colIdx+1);
       }
       
@@ -368,7 +439,7 @@ pcl::OrganizedMultiPlaneSegmentation<PointT, PointNT, PointLT>::refine (std::vec
       if (refinement_compare_->compare (current_row+colIdx, next_row+colIdx))
       {
         labels->points[next_row+colIdx].label = current_label;
-        label_indices[current_label].indices.push_back (next_row+colIdx);
+        label_indices[label_to_model[current_label]].indices.push_back (next_row+colIdx);
         inlier_indices[label_to_model[current_label]].indices.push_back (next_row+colIdx);
       }
 
@@ -391,7 +462,7 @@ pcl::OrganizedMultiPlaneSegmentation<PointT, PointNT, PointLT>::refine (std::vec
       if (refinement_compare_->compare (current_row+colIdx, current_row+colIdx-1))
       {
         labels->points[current_row+colIdx-1].label = current_label;
-        label_indices[current_label].indices.push_back (current_row+colIdx-1);
+        label_indices[label_to_model[current_label]].indices.push_back (current_row+colIdx-1);
         inlier_indices[label_to_model[current_label]].indices.push_back (current_row+colIdx-1);
       }
       
@@ -402,7 +473,7 @@ pcl::OrganizedMultiPlaneSegmentation<PointT, PointNT, PointLT>::refine (std::vec
       if (refinement_compare_->compare (current_row+colIdx, prev_row+colIdx))
       {
         labels->points[prev_row+colIdx].label = current_label;
-        label_indices[current_label].indices.push_back (prev_row+colIdx);
+        label_indices[label_to_model[current_label]].indices.push_back (prev_row+colIdx);
         inlier_indices[label_to_model[current_label]].indices.push_back (prev_row+colIdx);
       }
     }//col
